@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ReviewPulse — Customer Review Sentiment Dashboard</title>
+  <meta name="description" content="Serverless, free-tier customer review sentiment analytics for small businesses.">
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#128202;</text></svg>">
+</head>
+<body>
+  <!-- ======================= HEADER ======================= -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">&#128202;</span>
+      <div>
+        <h1>ReviewPulse</h1>
+        <p class="tagline">Cloud-Based Customer Review Sentiment Analysis &middot; Free-Tier Pipeline</p>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <span id="healthBadge" class="badge badge-muted" title="API health">checking&hellip;</span>
+      <button id="refreshBtn" class="btn btn-ghost" title="Reload all data">&#8635; Refresh</button>
+      <button id="themeBtn" class="btn btn-ghost" title="Toggle dark / light mode">&#127769; Theme</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- ======================= KPI CARDS ======================= -->
+    <section class="kpi-grid" aria-label="Key metrics">
+      <article class="card kpi"><span class="kpi-label">Total reviews</span><span id="kpiTotal" class="kpi-value">&ndash;</span></article>
+      <article class="card kpi"><span class="kpi-label">Processed</span><span id="kpiProcessed" class="kpi-value">&ndash;</span></article>
+      <article class="card kpi"><span class="kpi-label">Positive share</span><span id="kpiPositive" class="kpi-value kpi-pos">&ndash;</span></article>
+      <article class="card kpi"><span class="kpi-label">Negative share</span><span id="kpiNegative" class="kpi-value kpi-neg">&ndash;</span></article>
+      <article class="card kpi"><span class="kpi-label">Avg rating</span><span id="kpiRating" class="kpi-value">&ndash;</span></article>
+      <article class="card kpi"><span class="kpi-label">Avg confidence</span><span id="kpiConfidence" class="kpi-value">&ndash;</span></article>
+    </section>
+
+    <!-- ======================= FILTERS ======================= -->
+    <section class="card filters" aria-label="Filters">
+      <h2 class="card-title">Filters <span class="muted small">(apply to charts &amp; table)</span></h2>
+      <form id="filterForm" class="filter-row">
+        <label>Sentiment
+          <select name="sentiment">
+            <option value="">All</option>
+            <option value="positive">Positive</option>
+            <option value="neutral">Neutral</option>
+            <option value="negative">Negative</option>
+          </select>
+        </label>
+        <label>Business type
+          <select name="business_type"><option value="">All</option></select>
+        </label>
+        <label>From <input type="date" name="date_from"></label>
+        <label>To <input type="date" name="date_to"></label>
+        <label>Min rating
+          <select name="min_rating"><option value="">&ndash;</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select>
+        </label>
+        <label>Max rating
+          <select name="max_rating"><option value="">&ndash;</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select>
+        </label>
+        <label class="grow">Keyword <input type="text" name="keyword" placeholder="e.g. waiter, buffet, cold&hellip;"></label>
+        <div class="filter-actions">
+          <button type="submit" class="btn btn-primary">Apply</button>
+          <button type="button" id="resetFiltersBtn" class="btn btn-ghost">Reset</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- ======================= CHARTS ======================= -->
+    <section class="grid-2" aria-label="Charts">
+      <article class="card">
+        <h2 class="card-title">Sentiment distribution</h2>
+        <div class="chart-box"><canvas id="sentimentChart" aria-label="Sentiment pie chart"></canvas></div>
+        <p id="sentimentCaption" class="muted small"></p>
+      </article>
+      <article class="card">
+        <h2 class="card-title">Sentiment trend over time
+          <span class="segmented" id="periodToggle">
+            <button data-period="day" class="seg active">Day</button>
+            <button data-period="week" class="seg">Week</button>
+            <button data-period="month" class="seg">Month</button>
+          </span>
+        </h2>
+        <div class="chart-box tall"><canvas id="trendChart" aria-label="Sentiment trend line chart"></canvas></div>
+      </article>
+      <article class="card">
+        <h2 class="card-title">Top positive keywords</h2>
+        <div class="chart-box"><canvas id="posKeywordsChart" aria-label="Positive keywords bar chart"></canvas></div>
+      </article>
+      <article class="card">
+        <h2 class="card-title">Top negative keywords</h2>
+        <div class="chart-box"><canvas id="negKeywordsChart" aria-label="Negative keywords bar chart"></canvas></div>
+      </article>
+    </section>
+
+    <!-- ======================= TOOLS ROW ======================= -->
+    <section class="grid-2" aria-label="Interactive tools">
+      <!-- Analyze a review live -->
+      <article class="card">
+        <h2 class="card-title">Analyze a review <span class="badge badge-muted" id="analyzeEngine">&nbsp;</span></h2>
+        <p class="muted small">Classifies instantly with the pipeline's sentiment engine and stores the result.</p>
+        <textarea id="analyzeText" rows="3" placeholder="Paste a customer review&hellip;" maxlength="4000"></textarea>
+        <div class="inline-row">
+          <label>Rating <select id="analyzeRating"><option>5</option><option>4</option><option selected>3</option><option>2</option><option>1</option></select></label>
+          <label>Date <input type="date" id="analyzeDate"></label>
+          <button id="analyzeBtn" class="btn btn-primary">Analyze</button>
+        </div>
+        <div id="analyzeResult" class="analyze-result" hidden></div>
+      </article>
+
+      <!-- Upload reviews -->
+      <article class="card">
+        <h2 class="card-title">Upload reviews <span class="muted small">(CSV / JSON, max ~1&nbsp;MB)</span></h2>
+        <p class="muted small">Columns: <code>text, rating, date</code> (+ optional <code>business_name, business_type</code>). Invalid rows are reported, never silently dropped.</p>
+        <div class="inline-row">
+          <input type="file" id="uploadFile" accept=".csv,.json,.jsonl" class="grow">
+          <button id="uploadBtn" class="btn btn-primary">Upload &amp; ingest</button>
+        </div>
+        <details class="sample">
+          <summary>Download a sample CSV template</summary>
+          <pre>date,rating,text
+2024-05-01,5,"Great service and friendly staff!"
+2024-05-02,2,"Waited 40 minutes for cold food."</pre>
+          <button id="templateBtn" class="btn btn-ghost btn-small">Download reviews_template.csv</button>
+        </details>
+        <div id="uploadResult" class="analyze-result" hidden></div>
+      </article>
+    </section>
+
+    <!-- ======================= REVIEWS TABLE ======================= -->
+    <section class="card" aria-label="Recent reviews">
+      <h2 class="card-title">Reviews <span id="tableMeta" class="muted small"></span></h2>
+      <div class="table-wrap">
+        <table id="reviewsTable">
+          <thead>
+            <tr><th>Date</th><th>Rating</th><th>Text</th><th>Sentiment</th><th>Conf.</th><th>Keywords</th><th>Type</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="pager">
+        <button id="prevPage" class="btn btn-ghost">&larr; Prev</button>
+        <span id="pageInfo" class="muted small">&ndash;</span>
+        <button id="nextPage" class="btn btn-ghost">Next &rarr;</button>
+      </div>
+    </section>
+
+    <!-- ======================= FREE TIER ======================= -->
+    <section class="card" aria-label="Free tier usage and cost estimate">
+      <h2 class="card-title">Free-tier usage &amp; cost estimate</h2>
+      <p class="muted small">Live usage from this deployment compared with always-free allowances. Figures are <strong>estimates</strong> for the current dataset size, not billing statements.</p>
+      <div class="table-wrap">
+        <table id="freeTierTable">
+          <thead><tr><th>Service</th><th>Always-free allowance</th><th>Estimated usage</th><th>Status</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="muted small" id="freeTierNote"></p>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>Ahmed Bin Jaffar (26MS-DS037) &middot; MSDS Semester 2 &middot; Cloud Computing (MUET) &middot; Sir Ab Raheem Ansari</p>
+    <p class="muted small">Data: TripAdvisor reviews via <em>Azra Tuni (2024), MIT licence</em> &middot; Pipeline: serverless, free-tier &middot; <a href="../docs/DEPLOYMENT_GUIDE.md">Deployment guide</a></p>
+  </footer>
+
+  <script src="vendor/chart.umd.min.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
