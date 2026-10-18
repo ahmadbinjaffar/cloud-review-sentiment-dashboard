@@ -1,0 +1,91 @@
+# =====================================================================
+# cloud-review-sentiment-dashboard .gitignore
+# Policy: the public repo ships CODE + DOCS + a 20-row sample dataset.
+# The full dataset, raw results, media and course-only files stay local.
+# =====================================================================
+
+# --- Python ---
+.venv/
+venv/
+node_modules/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Secrets / credentials (NEVER commit) ---
+.env
+.env.*
+!.env.example
+*serviceAccount*.json
+*firebase-adminsdk*.json
+credentials.json
+secrets/
+*.pem
+*.key
+*.pfx
+terraform.tfstate
+terraform.tfstate.*
+.terraform/
+*.tfvars
+
+# --- Data: full dataset stays local; only the 20-row sample is committed ---
+data/raw/
+data/*.db
+data/*.sqlite
+data/*.json
+data/*.parquet
+data/*.csv
+!data/sample_reviews.csv
+!data/.gitkeep
+
+# --- Measurements & figures: regenerate with scripts/run_experiments.ps1 ---
+results/
+figures/
+
+# --- Course-only working files (mention internal course artifacts) ---
+paper/
+PROJECT_CONTEXT.md
+ASSUMPTIONS.md
+FINAL_CHECKLIST.md
+# research-paper toolchain (paper content stays private; scripts unusable without it)
+scripts/generate_research_paper.py
+scripts/export_paper_pdf.ps1
+
+# --- Presentation: repo keeps the pptx only; video/audio/webm stay local ---
+presentation/*
+!presentation/.gitkeep
+!presentation/Project_Presentation.pptx
+
+# --- Logs & local outputs ---
+*.log
+logs/
+experiments/_logs/
+.cache/
+
+# --- Editors / OS ---
+.vscode/*
+!.vscode/extensions.json
+~$*
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# --- Streamlit / app secrets ---
+.streamlit/secrets.toml
+
+# --- Build / media (video > any sensible git limit; no LFS) ---
+*.mp4
+*.webm
+*.mov
+*.zip
+build/
+dist/
+
+# --- SAM staging bundle ---
+infrastructure/.build/
+.aws-sam/

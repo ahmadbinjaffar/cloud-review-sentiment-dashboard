@@ -1,0 +1,42 @@
+# Cloud-Based Customer Review Sentiment Analysis Dashboard — runtime dependencies
+# Python 3.10+ (developed on 3.13.7). Pinned to major versions for reproducibility.
+
+# --- Local serverless mode (same handlers as AWS Lambda) ---
+fastapi>=0.115,<1
+uvicorn[standard]>=0.32,<1
+pydantic>=2.9,<3
+
+# --- Sentiment engines (pluggable) ---
+vaderSentiment>=3.3,<4          # default engine: offline, no credentials
+textblob>=0.18,<0.19            # lexicon-based alternative
+# Optional offline Hugging Face engine (local model instead of Inference API):
+#   pip install "transformers>=4.45,<5" torch --index-url https://download.pytorch.org/whl/cpu
+
+# --- Managed AI: Hugging Face Inference API / AWS adapters ---
+requests>=2.32,<3
+boto3>=1.35,<2                  # DynamoDB backend + S3 ingest + Comprehend adapter
+
+# --- Data handling / charts ---
+pandas>=2.2,<3
+numpy>=1.26,<3
+plotly>=5.24,<6
+
+# --- Experiments (Part 4): figures at 300 dpi + memory sampling ---
+matplotlib>=3.9,<4
+psutil>=6,<8
+# Optional local Hugging Face engine used by the experiments (offline DistilBERT):
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu && pip install transformers
+
+# --- Report generation (Part 5): docs/Project_Report.docx ---
+python-docx>=1.1,<2
+
+# --- Presentation (Part 6): presentation/Project_Presentation.pptx ---
+python-pptx>=1.0,<2
+
+# --- Config ---
+python-dotenv>=1.0,<2
+
+# --- Tests / lint (dev) ---
+pytest>=8.3,<9
+ruff>=0.7,<1
+black>=24.10,<25
