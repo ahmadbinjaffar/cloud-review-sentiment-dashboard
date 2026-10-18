@@ -1,0 +1,16 @@
+# Example SAM CLI configuration — copy to infrastructure/samconfig.toml and edit.
+# samconfig.toml may contain account ids/regions but NEVER credentials.
+version = 0.1
+
+[default.global.parameters]
+stack_name = "reviewpulse-dev"
+region = "us-east-1"
+
+[default.build.parameters]
+template_file = "template.yaml"
+
+[default.deploy.parameters]
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+resolve_s3 = true
+parameter_overrides = "ProjectName=reviewpulse Environment=dev SentimentEngine=vader NeutralThreshold=0.15 LogRetentionDays=14"

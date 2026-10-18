@@ -1,0 +1,6 @@
+# Lambda-only dependencies (packaged by `sam build` via scripts/deploy.ps1).
+# boto3/botocore are provided by the Lambda runtime.
+requests>=2.32,<3
+vaderSentiment>=3.3,<4
+textblob>=0.18,<0.19
+python-dotenv>=1.0,<2

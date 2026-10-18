@@ -1,0 +1,229 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Cloud-Based Customer Review Sentiment Analysis Dashboard — serverless, free-tier
+  pipeline: S3 uploads -> Lambda (ingest + sentiment) -> DynamoDB -> HTTP API,
+  with a static dashboard on S3 website hosting. Least-privilege IAM, no VPC,
+  no always-on compute. NOT deployed by default; use scripts/deploy.ps1.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: reviewpulse
+    Description: Resource name prefix.
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, prod]
+  SentimentEngine:
+    Type: String
+    Default: vader
+    AllowedValues: [vader, textblob, huggingface]
+    Description: >
+      Engine used by the processing handler. vader/textblob run inside Lambda
+      (zero external calls); huggingface uses the Inference API (needs HfToken).
+  HfToken:
+    Type: String
+    Default: ""
+    NoEcho: true
+    Description: Hugging Face token (only used when SentimentEngine=huggingface).
+  NeutralThreshold:
+    Type: Number
+    Default: 0.15
+    MinValue: 0
+    MaxValue: 1
+  LogRetentionDays:
+    Type: Number
+    Default: 14
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 60
+    MemorySize: 512
+    Architectures: [x86_64]
+    Environment:
+      Variables:
+        STORAGE_BACKEND: dynamodb
+        OBJECT_STORE_MODE: s3
+        SENTIMENT_ENGINE: !Ref SentimentEngine
+        HF_TOKEN: !Ref HfToken
+        NEUTRAL_THRESHOLD: !Ref NeutralThreshold
+        DYNAMODB_TABLE: !Ref ReviewsTable
+        MAX_REVIEWS: "500"
+        LOG_LEVEL: INFO
+
+Resources:
+  # ---------------- DynamoDB (serverless database) ----------------
+  ReviewsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${ProjectName}-${Environment}-reviews"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: review_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: review_id
+          KeyType: HASH
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  # ---------------- Lambda (ingestion + processing + API) ----------------
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: python3.12
+      BuildProperties:
+        RequirementsFile: requirements.txt
+    Properties:
+      FunctionName: !Sub "${ProjectName}-${Environment}-api"
+      CodeUri: .build/
+      Handler: src.handlers.router.lambda_handler
+      Description: "Single entry point: API Gateway routes + S3 upload events."
+      Policies:
+        - Statement:
+            - Sid: DynamoDBCrudOnReviewsTable
+              Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+                - dynamodb:UpdateItem
+                - dynamodb:DeleteItem
+                - dynamodb:BatchGetItem
+                - dynamodb:BatchWriteItem
+                - dynamodb:Query
+                - dynamodb:Scan
+                - dynamodb:DescribeTable
+              Resource: !GetAtt ReviewsTable.Arn
+            - Sid: ReadUploadedObjects
+              Effect: Allow
+              Action:
+                - s3:GetObject
+              Resource: !Sub "${UploadsBucket.Arn}/uploads/*"
+            - Sid: LogsOnly
+              Effect: Allow
+              Action:
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: !GetAtt ApiLogGroup.Arn
+      Events:
+        HttpApi:
+          Type: HttpApi
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+        HttpRoot:
+          Type: HttpApi
+          Properties:
+            Path: /
+            Method: ANY
+        UploadCreated:
+          Type: S3
+          Properties:
+            Bucket: !Ref UploadsBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: uploads/
+
+  # ---------------- S3: review uploads (triggers ingestion) ----------------
+  UploadsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${ProjectName}-${Environment}-uploads-${AWS::AccountId}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-uploads-after-30-days
+            Status: Enabled
+            ExpirationInDays: 30
+      Tags:
+        - Key: project
+          Value: !Ref ProjectName
+
+  # ---------------- S3: static dashboard website ----------------
+  DashboardBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${ProjectName}-${Environment}-dashboard-${AWS::AccountId}"
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: index.html
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags:
+        - Key: project
+          Value: !Ref ProjectName
+
+  DashboardBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DashboardBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: PublicReadForWebsite
+            Effect: Allow
+            Principal: "*"
+            Action: s3:GetObject
+            Resource: !Sub "${DashboardBucket.Arn}/*"
+
+  # ---------------- CloudWatch logs ----------------
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${ProjectName}-${Environment}-api"
+      RetentionInDays: !Ref LogRetentionDays
+
+  HttpApiAccessLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/apigateway/${ProjectName}-${Environment}-http"
+      RetentionInDays: !Ref LogRetentionDays
+
+  # ---------------- Lambda permission for S3 events ----------------
+  AllowUploadsToInvoke:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ApiFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn: !GetAtt UploadsBucket.Arn
+
+Outputs:
+  ApiUrl:
+    Description: HTTP API base URL (same routes as the local server).
+    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+  DashboardUrl:
+    Description: Static dashboard website URL (deploy with scripts/deploy.ps1).
+    Value: !GetAtt DashboardBucket.WebsiteURL
+  ReviewsTableName:
+    Value: !Ref ReviewsTable
+  UploadsBucketName:
+    Description: Drop CSV/JSON files under s3://<bucket>/uploads/ to auto-ingest.
+    Value: !Ref UploadsBucket
+  DashboardBucketName:
+    Value: !Ref DashboardBucket
+  ApiFunctionName:
+    Value: !Ref ApiFunction
